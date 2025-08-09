@@ -1,0 +1,6 @@
+{
+  "depositor": "12345",
+  "amount": "100",
+  "destinationChainId": "137", 
+  "secret": "98765"
+}
