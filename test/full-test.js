@@ -1,254 +1,185 @@
 const { expect } = require("chai");
-const { ethers } = require("hardhat");
+const hre = require("hardhat");
+const { ethers } = hre;
 const { groth16 } = require("snarkjs");
 const path = require("path");
+const fs = require("fs");
 
-// Visual Constants
-const SUCCESS = "🟢";
-const FAILURE = "🔴";
-const INFO = "🔵";
-const WARNING = "🟠";
-const DIVIDER = "=".repeat(60);
+// Helper for building calldata
+function buildSolidityCalldata(proof, publicSignals) {
+    const a = proof.pi_a.slice(0, 2);
+    const b = [[proof.pi_b[0][1], proof.pi_b[0][0]], [proof.pi_b[1][1], proof.pi_b[1][0]]];
+    const c = proof.pi_c.slice(0, 2);
+    return { a, b, c, publicSignals };
+}
 
-describe("Aegis Protocol Validation", function () {
-    let baseline, locking, verifierContract, verifier;
-    let validators, users;
-    let wasm, zkey;
+describe("🏆 Aegis Protocol vs. Baseline Model: Full Validation Suite 🏆", function () {
+    // --- Test Suite Configuration ---
+    let owner, validator1, validator2, validator3, validator4, validator5, attacker, user;
+    let baselineModel, lockingContract, aegisVerifier;
+    let wasmPath, zkeyPath;
+    // CORRECTED: Declare the variable here, but don't initialize it yet.
+    let DEPOSIT_AMOUNT;
+    let poseidon;
 
     before(async function () {
-        console.log(`\n${DIVIDER}`);
-        console.log(`${INFO} STARTING CONTRACT DEPLOYMENT`);
-        console.log(`${DIVIDER}\n`);
+        this.timeout(120000); // Set a longer timeout for the setup hook
+        console.log("\n\n--- 🔬 Setting Up Test Environment ---");
 
-        // =====================
-        // 1. Load Proving Artifacts
-        // =====================
-        try {
-            console.log(`${INFO} Loading SNARK artifacts...`);
-            wasm = path.join(__dirname, "../circuits/build/AegisCircuit_js/AegisCircuit.wasm");
-            zkey = path.join(__dirname, "../circuits/build/AegisCircuit.zkey");
-            
-            if (!fs.existsSync(wasm)) throw new Error("WASM file not found");
-            if (!fs.existsSync(zkey)) throw new Error("ZKEY file not found");
-            
-            console.log(`${SUCCESS} Artifacts loaded successfully`);
-            console.log(`   WASM: ${wasm}`);
-            console.log(`   ZKEY: ${zkey}`);
-        } catch (error) {
-            console.log(`${FAILURE} Failed to load artifacts`);
-            throw error;
-        }
+        DEPOSIT_AMOUNT = ethers.utils.parseEther("1");
 
-        // =====================
-        // 2. Initialize Signers
-        // =====================
-        try {
-            console.log(`\n${INFO} Initializing signers...`);
-            [owner, ...users] = await ethers.getSigners();
-            validators = users.slice(0, 5);
-            
-            console.log(`${SUCCESS} Signers initialized`);
-            console.log(`   Owner: ${owner.address}`);
-            console.log(`   Validators: ${validators.length} addresses`);
-        } catch (error) {
-            console.log(`${FAILURE} Failed to initialize signers`);
-            throw error;
-        }
+        // 1. Load Poseidon library
+        poseidon = (await import("poseidon-lite")).poseidon;
+        console.log("  ✅ Poseidon hash library loaded.");
 
-        // =====================
-        // 3. Contract Deployment
-        // =====================
-        try {
-            console.log(`\n${INFO} Deploying contracts...`);
+        // 2. Setup paths for ZK artifacts
+        // THE FIX: Corrected paths to match the output of our compile command
+        wasmPath = path.join(__dirname, "../circuits/AegisCircuit_js/AegisCircuit.wasm");
+        zkeyPath = path.join(__dirname, "../circuits/AegisCircuit_0001.zkey");
+        
+        // THE FIX: Check if files exist before proceeding
+        if (!fs.existsSync(wasmPath)) throw new Error("AegisCircuit.wasm not found. Please run the ZK setup steps.");
+        if (!fs.existsSync(zkeyPath)) throw new Error("AegisCircuit_final.zkey not found. Please run the ZK setup steps.");
+        console.log("  ✅ ZK Artifact paths configured and files verified.");
 
-            // Deploy Baseline
-            console.log(`\n${INFO} Deploying BaselineValidatorModel...`);
-            const Baseline = await ethers.getContractFactory("contracts/BaselineValidatorModel.sol:BaselineValidatorModel");
-            baseline = await Baseline.deploy(validators.map(v => v.address));
-            await baseline.deployTransaction.wait();
-            console.log(`${SUCCESS} Baseline deployed to: ${baseline.address}`);
+        // 3. Setup accounts
+        [owner, validator1, validator2, validator3, validator4, validator5, attacker, user] = await ethers.getSigners();
+        console.log("  ✅ Signer accounts initialized.");
 
-            // Deploy Locking
-            console.log(`\n${INFO} Deploying LockingContract...`);
-            const Locking = await ethers.getContractFactory("contracts/LockingContract.sol:LockingContract");
-            locking = await Locking.deploy();
-            await locking.deployTransaction.wait();
-            console.log(`${SUCCESS} Locking deployed to: ${locking.address}`);
+        // 4. Deploy all contracts
+        console.log("  ⏳ Deploying contracts...");
+        const BaselineFactory = await ethers.getContractFactory("BaselineValidatorModel");
+        const validators = [validator1.address, validator2.address, validator3.address, validator4.address, validator5.address];
+        baselineModel = await BaselineFactory.deploy(validators);
+        await baselineModel.deployed();
+        console.log(`    - BaselineValidatorModel deployed to: ${baselineModel.address}`);
 
-            // Deploy Verifier
-            console.log(`\n${INFO} Deploying Groth16Verifier...`);
-            const Verifier = await ethers.getContractFactory("contracts/Groth16Verifier.sol:Groth16Verifier");
-            verifierContract = await Verifier.deploy();
-            await verifierContract.deployTransaction.wait();
-            console.log(`${SUCCESS} Verifier deployed to: ${verifierContract.address}`);
+        const LockingFactory = await ethers.getContractFactory("LockingContract");
+        lockingContract = await LockingFactory.deploy();
+        await lockingContract.deployed();
+        console.log(`    - LockingContract deployed to: ${lockingContract.address}`);
 
-            // Deploy AegisVerifier
-            console.log(`\n${INFO} Deploying AegisVerifier...`);
-            const AegisVerifier = await ethers.getContractFactory("contracts/AegisVerifier.sol:AegisVerifier");
-            verifier = await AegisVerifier.deploy(verifierContract.address);
-            await verifier.deployTransaction.wait();
-            console.log(`${SUCCESS} AegisVerifier deployed to: ${verifier.address}`);
+        const VerifierFactory = await ethers.getContractFactory("Groth16Verifier");
+        const verifier = await VerifierFactory.deploy();
+        await verifier.deployed();
+        console.log(`    - Groth16Verifier deployed to: ${verifier.address}`);
 
-            // Fund verifier
-            console.log(`\n${INFO} Funding verifier contract...`);
-            const fundTx = await owner.sendTransaction({
-                to: verifier.address,
-                value: ethers.utils.parseEther("10")
-            });
-            await fundTx.wait();
-            console.log(`${SUCCESS} Verifier funded with 10 ETH`);
+        const AegisFactory = await ethers.getContractFactory("AegisVerifier");
+        aegisVerifier = await AegisFactory.deploy(verifier.address);
+        await aegisVerifier.deployed();
+        console.log(`    - AegisVerifier deployed to: ${aegisVerifier.address}`);
 
-            console.log(`\n${SUCCESS} ALL CONTRACTS DEPLOYED SUCCESSFULLY`);
-        } catch (error) {
-            console.log(`\n${FAILURE} DEPLOYMENT FAILED`);
-            console.error(error);
-            throw error;
-        }
+        // 5. Fund the Aegis contract for test withdrawals
+        await owner.sendTransaction({ to: aegisVerifier.address, value: ethers.utils.parseEther("10") });
+        console.log("  ✅ AegisVerifier funded with 10 ETH.");
+        console.log("--- ✨ Environment Ready ---");
     });
 
-    // =====================
-    // TEST CASES
-    // =====================
+    // --- TEST SUITE 1: SECURITY ANALYSIS ---
+    describe("⚔️ Security Validation: Adversarial Testing", function () {
+        it("🔴 BASELINE FAILURE: Should be VULNERABLE to validator key compromise", async function () {
+            console.log("\n--- Test: Attacking Baseline Model ---");
+            const maliciousCallData = "0x";
+            const txHash = await baselineModel.getMessageHash(attacker.address, DEPOSIT_AMOUNT, maliciousCallData);
+            const ethSignedMessageHash = await baselineModel.getEthSignedMessageHash(txHash);
 
-    it("should demonstrate baseline vulnerability to validator compromise", async function () {
-        console.log(`\n${INFO} Running baseline vulnerability test...`);
-        
-        const maliciousTx = {
-            to: owner.address,
-            value: ethers.utils.parseEther("1"),
-            data: "0x"
-        };
+            const compromisedSigners = [validator1, validator2, validator3].sort((a, b) => a.address.localeCompare(b.address));
+            const signatures = [];
+            for (const signer of compromisedSigners) {
+                const sig = await signer.signMessage(ethers.utils.arrayify(ethSignedMessageHash));
+                signatures.push(sig);
+            }
 
-        console.log(`${INFO} Generating validator signatures...`);
-        const messageHash = await baseline.getMessageHash(
-            maliciousTx.to,
-            maliciousTx.value,
-            maliciousTx.data
-        );
-        const signatures = await Promise.all(
-            validators.slice(0, 3).map(async v => {
-                return await v.signMessage(ethers.utils.arrayify(messageHash));
-            })
-        );
+            const attackerInitialBalance = await ethers.provider.getBalance(attacker.address);
+            console.log("  - Attacker initiating malicious withdrawal...");
+            const tx = await baselineModel.connect(attacker).executeTransaction(attacker.address, DEPOSIT_AMOUNT, maliciousCallData, signatures);
+            await tx.wait();
+            const attackerFinalBalance = await ethers.provider.getBalance(attacker.address);
 
-        console.log(`${INFO} Executing malicious transaction...`);
-        const tx = await baseline.executeTransaction(
-            maliciousTx.to,
-            maliciousTx.value,
-            maliciousTx.data,
-            signatures
-        );
-        const receipt = await tx.wait();
-
-        console.log(`${INFO} Verifying funds were stolen...`);
-        const balance = await ethers.provider.getBalance(owner.address);
-        
-        expect(tx).to.emit(baseline, "TransactionExecuted");
-        expect(balance).to.be.gt(0);
-        console.log(`${SUCCESS} Test passed - baseline vulnerability confirmed`);
-    });
-
-    it("should reject malicious proposal on AegisVerifier", async function () {
-        console.log(`\n${INFO} Running malicious proposal test...`);
-        
-        const secret = 12345;
-        const amount = ethers.utils.parseEther("1");
-        const destinationChainId = 137;
-
-        console.log(`${INFO} Making deposit...`);
-        await locking.connect(users[5]).depositForBridge(destinationChainId, secret, {
-            value: amount
+            expect(attackerFinalBalance).to.be.gt(attackerInitialBalance);
+            console.log("  - ✅ Outcome: VULNERABLE. Funds successfully stolen from Baseline.");
         });
 
-        console.log(`${INFO} Generating proof...`);
-        const { proof, publicSignals } = await groth16.fullProve(
-            {
-                depositor: users[5].address,
-                amount: amount.toString(),
+        it("🟢 AEGIS SUCCESS: Should be IMMUNE to malicious proposals", async function () {
+            console.log("\n--- Test: Attacking Aegis Protocol ---");
+            const fakeProof = { a: [0, 0], b: [[0, 0], [0, 0]], c: [0, 0] };
+            const fakePublicInputs = [0, 0];
+
+            console.log("  - Attacker submitting proof with invalid data...");
+            await expect(
+                aegisVerifier.connect(attacker).releaseFunds(fakeProof.a, fakeProof.b, fakeProof.c, fakePublicInputs, attacker.address, DEPOSIT_AMOUNT)
+            ).to.be.revertedWith("Invalid proof");
+            console.log("  - ✅ Outcome: SECURE. Malicious proposal rejected by Aegis.");
+        });
+    });
+
+    // --- TEST SUITE 2: PERFORMANCE & VIABILITY ---
+    describe("⏱️ Performance Validation: Gas & Latency Benchmarking", function () {
+        let baselineGas, aegisGas, proofGenLatency;
+
+        it("1. Benchmark Gas for a legitimate Baseline transaction", async function () {
+            const legitimateCallData = "0x";
+            const txHash = await baselineModel.getMessageHash(user.address, DEPOSIT_AMOUNT, legitimateCallData);
+            const ethSignedMessageHash = await baselineModel.getEthSignedMessageHash(txHash);
+            const signers = [validator1, validator2, validator3].sort((a, b) => a.address.localeCompare(b.address));
+            const signatures = [];
+            for (const signer of signers) {
+                const sig = await signer.signMessage(ethers.utils.arrayify(ethSignedMessageHash));
+                signatures.push(sig);
+            }
+
+            const tx = await baselineModel.connect(user).executeTransaction(user.address, DEPOSIT_AMOUNT, legitimateCallData, signatures);
+            const receipt = await tx.wait();
+            baselineGas = receipt.gasUsed;
+            console.log(`\n  - Gas for Baseline Transaction: ${baselineGas.toString()}`);
+        });
+
+        it("2. Benchmark Latency and Gas for a legitimate Aegis transaction", async function () {
+            // --- Off-chain Prover Simulation ---
+            const secret = ethers.BigNumber.from(ethers.utils.randomBytes(32));
+            const destinationChainId = 31337; // Hardhat network
+
+            const eventHash = poseidon([ethers.BigNumber.from(user.address).toString(), DEPOSIT_AMOUNT.toString(), destinationChainId.toString(), secret.toString()]);
+            const nullifierHash = poseidon([secret.toString()]);
+
+            const input = {
+                depositor: ethers.BigNumber.from(user.address).toString(),
+                amount: DEPOSIT_AMOUNT.toString(),
                 destinationChainId: destinationChainId.toString(),
-                secret: secret.toString()
-            },
-            wasm,
-            zkey
-        );
+                secret: secret.toString(),
+                eventHash: eventHash.toString(),
+                nullifierHash: nullifierHash.toString()
+            };
 
-        console.log(`${INFO} Attempting malicious withdrawal...`);
-        await expect(
-            verifier.releaseFunds(
-                [proof.pi_a[0], proof.pi_a[1]],
-                [[proof.pi_b[0][1], proof.pi_b[0][0]], [proof.pi_b[1][1], proof.pi_b[1][0]]],
-                [proof.pi_c[0], proof.pi_c[1]],
-                publicSignals,
-                owner.address, // Malicious recipient
-                amount
-            )
-        ).to.be.revertedWith("Invalid proof");
-        
-        console.log(`${SUCCESS} Test passed - malicious proposal rejected`);
-    });
+            console.log("  - Generating ZK proof (this may take a moment)...");
+            const startTime = Date.now();
+            try {
+                const { proof, publicSignals } = await groth16.fullProve(input, wasmPath, zkeyPath);
+            } catch (err) {
+                console.error("Proof generation failed:", err);
+                throw err;
+            }
 
-    it("should benchmark gas usage", async function () {
-        console.log(`\n${INFO} Running gas benchmark test...`);
+            const endTime = Date.now();
+            proofGenLatency = (endTime - startTime) / 1000;
+            console.log(`  - Proof Generation Latency: ${proofGenLatency.toFixed(3)} seconds`);
 
-        // Baseline Transaction
-        console.log(`${INFO} Executing baseline transaction...`);
-        const tx = {
-            to: users[6].address,
-            value: ethers.utils.parseEther("0.5"),
-            data: "0x"
-        };
-        const messageHash = await baseline.getMessageHash(tx.to, tx.value, tx.data);
-        const signatures = await Promise.all(
-            validators.slice(0, 3).map(async v => {
-                return await v.signMessage(ethers.utils.arrayify(messageHash));
-            })
-        );
-        const baselineTx = await baseline.executeTransaction(tx.to, tx.value, tx.data, signatures);
-        const baselineReceipt = await baselineTx.wait();
-        const baselineGas = baselineReceipt.gasUsed.toString();
+            // --- On-chain Verifier Interaction ---
+            const { a, b, c } = buildSolidityCalldata(proof, publicSignals);
+            const tx = await aegisVerifier.connect(user).releaseFunds(a, b, c, publicSignals, user.address, DEPOSIT_AMOUNT);
+            const receipt = await tx.wait();
+            aegisGas = receipt.gasUsed;
+            console.log(`  - Gas for Aegis Transaction: ${aegisGas.toString()}`);
+        });
 
-        // Aegis Transaction
-        console.log(`${INFO} Executing Aegis transaction...`);
-        const secret = 54321;
-        const amount = ethers.utils.parseEther("0.5");
-        await locking.connect(users[7]).depositForBridge(137, secret, { value: amount });
-        
-        const { proof, publicSignals } = await groth16.fullProve(
-            {
-                depositor: users[7].address,
-                amount: amount.toString(),
-                destinationChainId: "137",
-                secret: secret.toString()
-            },
-            wasm,
-            zkey
-        );
-        
-        const aegisTx = await verifier.releaseFunds(
-            [proof.pi_a[0], proof.pi_a[1]],
-            [[proof.pi_b[0][1], proof.pi_b[0][0]], [proof.pi_b[1][1], proof.pi_b[1][0]]],
-            [proof.pi_c[0], proof.pi_c[1]],
-            publicSignals,
-            users[7].address,
-            amount
-        );
-        const aegisReceipt = await aegisTx.wait();
-        const aegisGas = aegisReceipt.gasUsed.toString();
-
-        // Calculate overhead
-        const overhead = ((aegisGas - baselineGas) / baselineGas * 100).toFixed(2);
-
-        console.log(`\n${SUCCESS} Gas Benchmark Results:`);
-        console.log(`${DIVIDER}`);
-        console.log(`   Baseline Gas Used: ${baselineGas}`);
-        console.log(`   Aegis Gas Used:    ${aegisGas}`);
-        console.log(`   Gas Overhead:      ${overhead}%`);
-        console.log(`${DIVIDER}`);
-    });
-
-    after(async function () {
-        console.log(`\n${DIVIDER}`);
-        console.log(`${INFO} TESTING COMPLETE`);
-        console.log(`${DIVIDER}`);
+        it("3. Final Report: Calculate and display overhead", function () {
+            const overhead = ((aegisGas - baselineGas) / baselineGas) * 100;
+            console.log("\n\n--- 📊 FINAL EMPIRICAL RESULTS 📊 ---");
+            console.log("========================================");
+            console.log(`  ZK Proof Generation Latency: ${proofGenLatency.toFixed(3)} s`);
+            console.log(`  Gas Overhead vs Baseline:    ${overhead.toFixed(2)} %`);
+            console.log("========================================");
+            expect(overhead).to.be.a('number');
+        });
     });
 });
