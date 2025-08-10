@@ -1,7 +1,7 @@
 pragma circom 2.0.0;
 
-/* 
- * @title AegisCircuit 
+/*
+ * @title AegisCircuit
  * @author Niomi Langaliya & Dr. Gemini
  */
 include "../node_modules/circomlib/circuits/poseidon.circom";
