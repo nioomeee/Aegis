@@ -1,6 +1,6 @@
 const { expect } = require("chai");
 const hre = require("hardhat");
-const { ethers } = hre;
+const { ethers } = require("hardhat");
 const { groth16 } = require("snarkjs");
 const path = require("path");
 const fs = require("fs");
