@@ -27,41 +27,12 @@ describe("🏆 Aegis Protocol Test Suite", function () {
     // ZK setup
     let wasmPath, zkeyPath, poseidon;
 
-    const { expect } = require("chai");
-const { ethers } = require("hardhat");
-const { groth16 } = require("snarkjs");
-const path = require("path");
-const fs = require("fs");
-
-// Helper function for proof formatting
-function formatProof(proof) {
-    return {
-        a: [proof.pi_a[0], proof.pi_a[1]],
-        b: [[proof.pi_b[0][1], proof.pi_b[0][0]], [proof.pi_b[1][1], proof.pi_b[1][0]]],
-        c: [proof.pi_c[0], proof.pi_c[1]],
-    };
-}
-
-describe("🏆 Aegis Protocol Test Suite", function () {
-    // Test configuration
-    const DEPOSIT_AMOUNT = ethers.utils.parseEther("1");
-    const CHAIN_ID = 31337; // Hardhat network ID
-
-    // Contract instances
-    let baselineModel, aegisVerifier;
-    
-    // Accounts
-    let owner, validators, attacker, user;
-
-    // ZK setup
-    let wasmPath, zkeyPath, poseidon;
-
     before(async function () {
         this.timeout(300000); // 5 minute timeout for setup
 
         console.log("\n=== Setting Up Test Environment ===");
 
-        // 1. Initialize Poseidon - FIXED: Using require instead of dynamic import
+        // 1. Initialize Poseidon
         const poseidonModule = require("poseidon-lite");
         poseidon = poseidonModule.poseidon;
         if (typeof poseidon !== 'function') throw new Error("Poseidon not properly initialized");
@@ -117,17 +88,16 @@ describe("🏆 Aegis Protocol Test Suite", function () {
         console.log("✓ Contracts funded");
     });
 
-
     describe("🔒 Security Tests", function () {
         it("Baseline: Should allow malicious withdrawal with validator signatures", async function () {
-            // Prepare transaction - FIXED: Use proper address formatting
+            // Prepare transaction
             const txData = {
                 to: attacker.address,
                 value: DEPOSIT_AMOUNT,
                 data: "0x"
             };
             
-            // Get hash and sign - FIXED: Proper message formatting
+            // Get hash and sign
             const messageHash = await baselineModel.getMessageHash(
                 txData.to, 
                 txData.value, 
@@ -138,7 +108,7 @@ describe("🏆 Aegis Protocol Test Suite", function () {
                 await baselineModel.getEthSignedMessageHash(messageHash)
             );
             
-            // Get signatures from first 3 validators - FIXED: Ensure proper signing order
+            // Get signatures from first 3 validators
             const signingValidators = validators.slice(0, 3)
                 .sort((a, b) => a.address.toLowerCase().localeCompare(b.address.toLowerCase()));
             
@@ -146,14 +116,14 @@ describe("🏆 Aegis Protocol Test Suite", function () {
                 signingValidators.map(v => v.signMessage(ethMessageHash))
             );
 
-            // Execute attack - FIXED: Added gas limit override
+            // Execute attack
             const initialBalance = await ethers.provider.getBalance(attacker.address);
             const tx = await baselineModel.connect(attacker).executeTransaction(
                 txData.to,
                 txData.value,
                 txData.data,
                 signatures,
-                { gasLimit: 1000000 } // Added gas limit
+                { gasLimit: 1000000 }
             );
             
             const receipt = await tx.wait();
@@ -218,7 +188,7 @@ describe("🏆 Aegis Protocol Test Suite", function () {
                 txData.value,
                 txData.data,
                 signatures,
-                { gasLimit: 1000000 } // Added gas limit
+                { gasLimit: 1000000 }
             );
             
             const receipt = await tx.wait();
@@ -227,10 +197,10 @@ describe("🏆 Aegis Protocol Test Suite", function () {
         });
 
         it("Aegis: Measure proof generation and verification", async function () {
-            // Generate ZK proof - FIXED: Proper poseidon usage
+            // Generate ZK proof
             const secret = ethers.BigNumber.from(ethers.utils.randomBytes(32));
             
-            // Calculate hashes - FIXED: Proper array conversion
+            // Calculate hashes
             const inputs = [
                 ethers.BigNumber.from(user.address).toString(),
                 DEPOSIT_AMOUNT.toString(),
@@ -267,7 +237,7 @@ describe("🏆 Aegis Protocol Test Suite", function () {
                 publicSignals,
                 user.address,
                 DEPOSIT_AMOUNT,
-                { gasLimit: 1000000 } // Added gas limit
+                { gasLimit: 1000000 }
             );
             
             const receipt = await tx.wait();
@@ -286,4 +256,4 @@ describe("🏆 Aegis Protocol Test Suite", function () {
             expect(overhead).to.be.a('number');
         });
     });
-})});
+});

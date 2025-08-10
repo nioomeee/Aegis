@@ -10,12 +10,14 @@
     "@typechain/hardhat": "^6.1.6",
     "@types/chai": "^4.3.20",
     "@types/mocha": "^10.0.10",
+    "chai": "^5.2.1",
     "circom": "^0.5.46",
     "circomlib": "^2.0.5",
     "ethers": "^5.7.2",
     "hardhat": "^2.19.0",
     "hardhat-contract-sizer": "^2.10.1",
     "hardhat-gas-reporter": "^1.0.10",
+    "poseidon-lite": "^0.3.0",
     "snarkjs": "^0.7.5",
     "solidity-coverage": "^0.8.16",
     "ts-node": "^10.9.2",
@@ -23,7 +25,6 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
-    "circomlibjs": "^0.1.7",
-    "poseidon-lite": "^0.3.0"
+    "circomlibjs": "^0.1.7"
   }
 }
