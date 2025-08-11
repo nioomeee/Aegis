@@ -179,7 +179,7 @@ describe("🏆 Aegis Protocol vs. Baseline Model: Full Validation Suite 🏆", f
                     attacker.address, 
                     DEPOSIT_AMOUNT
                 )
-            ).to.be.revertedWith("Invalid proof");
+            ).to.be.revertedWithCustomError(aegisVerifier, "InvalidProof");
             console.log("  - ✅ Outcome: SECURE. Malicious proposal rejected by Aegis.");
         });
     });
