@@ -17,7 +17,7 @@ describe("🏆 Aegis Protocol vs. Baseline Model: Full Validation Suite 🏆", f
     let owner, validator1, validator2, validator3, validator4, validator5, attacker, user;
     let baselineModel, lockingContract, aegisVerifier;
     let wasmPath, zkeyPath;
-    const DEPOSIT_AMOUNT = ethers.utils.parseEther("1");
+    const DEPOSIT_AMOUNT = ethers.parseEther("1");
     let poseidon;
 
     before(async function () {
@@ -45,26 +45,26 @@ describe("🏆 Aegis Protocol vs. Baseline Model: Full Validation Suite 🏆", f
         const BaselineFactory = await ethers.getContractFactory("BaselineValidatorModel");
         const validators = [validator1.address, validator2.address, validator3.address, validator4.address, validator5.address];
         baselineModel = await BaselineFactory.deploy(validators);
-        await baselineModel.deployed();
-        console.log(`    - BaselineValidatorModel deployed to: ${baselineModel.address}`);
+        await baselineModel.waitForDeployment();
+        console.log(`    - BaselineValidatorModel deployed to: ${await baselineModel.getAddress()}`);
 
         const LockingFactory = await ethers.getContractFactory("LockingContract");
         lockingContract = await LockingFactory.deploy();
-        await lockingContract.deployed();
-        console.log(`    - LockingContract deployed to: ${lockingContract.address}`);
+        await lockingContract.waitForDeployment();
+        console.log(`    - LockingContract deployed to: ${await lockingContract.getAddress()}`);
 
         const VerifierFactory = await ethers.getContractFactory("Groth16Verifier");
         const verifier = await VerifierFactory.deploy();
-        await verifier.deployed();
-        console.log(`    - Groth16Verifier deployed to: ${verifier.address}`);
+        await verifier.waitForDeployment();
+        console.log(`    - Groth16Verifier deployed to: ${await verifier.getAddress()}`);
 
         const AegisFactory = await ethers.getContractFactory("AegisVerifier");
-        aegisVerifier = await AegisFactory.deploy(verifier.address);
-        await aegisVerifier.deployed();
-        console.log(`    - AegisVerifier deployed to: ${aegisVerifier.address}`);
+        aegisVerifier = await AegisFactory.deploy(await verifier.getAddress());
+        await aegisVerifier.waitForDeployment();
+        console.log(`    - AegisVerifier deployed to: ${await aegisVerifier.getAddress()}`);
 
         // 5. Fund the Aegis contract for test withdrawals
-        await owner.sendTransaction({ to: aegisVerifier.address, value: ethers.utils.parseEther("10") });
+        await owner.sendTransaction({ to: await aegisVerifier.getAddress(), value: ethers.parseEther("10") });
         console.log("  ✅ AegisVerifier funded with 10 ETH.");
         console.log("--- ✨ Environment Ready ---");
     });
@@ -80,7 +80,7 @@ describe("🏆 Aegis Protocol vs. Baseline Model: Full Validation Suite 🏆", f
             const compromisedSigners = [validator1, validator2, validator3].sort((a, b) => a.address.localeCompare(b.address));
             const signatures = [];
             for (const signer of compromisedSigners) {
-                const sig = await signer.signMessage(ethers.utils.arrayify(ethSignedMessageHash));
+                const sig = await signer.signMessage(ethers.getBytes(ethSignedMessageHash));
                 signatures.push(sig);
             }
 
@@ -118,7 +118,7 @@ describe("🏆 Aegis Protocol vs. Baseline Model: Full Validation Suite 🏆", f
             const signers = [validator1, validator2, validator3].sort((a, b) => a.address.localeCompare(b.address));
             const signatures = [];
             for (const signer of signers) {
-                const sig = await signer.signMessage(ethers.utils.arrayify(ethSignedMessageHash));
+                const sig = await signer.signMessage(ethers.getBytes(ethSignedMessageHash));
                 signatures.push(sig);
             }
 
@@ -130,14 +130,14 @@ describe("🏆 Aegis Protocol vs. Baseline Model: Full Validation Suite 🏆", f
 
         it("2. Benchmark Latency and Gas for a legitimate Aegis transaction", async function () {
             // --- Off-chain Prover Simulation ---
-            const secret = ethers.BigNumber.from(ethers.utils.randomBytes(32));
+            const secret = ethers.toBigInt(ethers.randomBytes(32));
             const destinationChainId = 31337; // Hardhat network
 
-            const eventHash = poseidon([ethers.BigNumber.from(user.address).toString(), DEPOSIT_AMOUNT.toString(), destinationChainId.toString(), secret.toString()]);
+            const eventHash = poseidon([ethers.toBigInt(user.address).toString(), DEPOSIT_AMOUNT.toString(), destinationChainId.toString(), secret.toString()]);
             const nullifierHash = poseidon([secret.toString()]);
 
             const input = {
-                depositor: ethers.BigNumber.from(user.address).toString(),
+                depositor: ethers.toBigInt(user.address).toString(),
                 amount: DEPOSIT_AMOUNT.toString(),
                 destinationChainId: destinationChainId.toString(),
                 secret: secret.toString(),
@@ -161,7 +161,7 @@ describe("🏆 Aegis Protocol vs. Baseline Model: Full Validation Suite 🏆", f
         });
 
         it("3. Final Report: Calculate and display overhead", function () {
-            const overhead = ((aegisGas - baselineGas) / baselineGas) * 100;
+            const overhead = (Number(aegisGas - baselineGas) / Number(baselineGas)) * 100;
             console.log("\n\n--- 📊 FINAL EMPIRICAL RESULTS 📊 ---");
             console.log("========================================");
             console.log(`  ZK Proof Generation Latency: ${proofGenLatency.toFixed(3)} s`);
