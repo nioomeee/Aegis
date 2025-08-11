@@ -1,6 +1,3 @@
-// This is a circom 2.0 circuit
-// Run with `circom AegisCircuit.circom --r1cs --wasm --sym -o circuits`
-
 pragma circom 2.0.0;
 
 /*
