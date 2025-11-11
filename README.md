@@ -137,6 +137,6 @@ Projected Impact: Migrating the AegisVerifier contract to a Layer 2 network is p
 
 ---
 
-##✍️ Author
+## ✍️ Author
 
 Niomi Langaliya
