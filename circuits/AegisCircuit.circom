@@ -1,11 +1,12 @@
 pragma circom 2.0.0;
 
 /*
- * @title AegisCircuit (Final Corrected Version)
- * @author Niomi Langaliya & Dr. Gemini
+ * @title AegisCircuit
+ * @author Niomi Langaliya
  * @notice This circuit cryptographically proves knowledge of a deposit event.
- * The core correction is in the `main` component declaration, ensuring only
- * the hashes are made public, while the deposit details remain private.
+ * The public component declaration ensures only the two hashes are exposed,
+ * while the deposit details (depositor, amount, destinationChainId, secret)
+ * remain private to the prover.
  */
 
 // We will use the Poseidon hash function from the circomlib library.
