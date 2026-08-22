@@ -96,8 +96,8 @@ Aegis Architecture — Zero Attack Surface
            │    • nullifier                   │               │
            │                                  │               │
            │  Public Inputs:                  │               │
-           │    • Poseidon(secret)            │               │
-           │    • merkle root                 │               │
+           │    • eventHash                   │               │
+           │    • nullifierHash               │               │
            │                                  │               │
            │  Output: π (Groth16 Proof)       │               │
            └──────────────────────────────────┘               │
@@ -139,6 +139,7 @@ Aegis Architecture — Zero Attack Surface
 
 > All benchmarks were run on a local Hardhat network simulating an L1 environment.
 
+
 | Metric | Result | Status |
 |--------|--------|--------|
 | 🔐 Security Validation | 100% success rate vs. simulated exploit | ✅ Achieved |
@@ -146,6 +147,9 @@ Aegis Architecture — Zero Attack Surface
 | 📦 Baseline Validator Gas | 82,265 gas | — |
 | 📦 Aegis Verifier Gas | 267,583 gas | — |
 | 📈 Gas Overhead (L1) | **225.27%** | ⚙️ Benchmark Established |
+
+
+| **Merkle Membership Proof** | Circuit does not yet verify the deposit belongs to a tracked set on Chain A — currently only proves knowledge of the pre-image hash and binds a nullifier. Membership proof is a planned V2 addition. |
 
 > **Note on Gas:** The L1 overhead is a known and expected tradeoff for cryptographic verification. The [V2 roadmap](#️-roadmap--future-work) projects **>90% gas reduction** via Polygon zkEVM deployment, making the protocol economically viable.
 
