@@ -46,6 +46,6 @@ template AegisCircuit() {
     nullifierHash === nullifierHasher.out;
 }
 
-// THE CRITICAL FIX IS HERE:
-// We declare that `eventHash` and `nullifierHash` are the public signals for this circuit.
+// Only eventHash and nullifierHash are exposed publicly here  
+// everything else stays private to the prover.
 component main {public [eventHash, nullifierHash]} = AegisCircuit();
